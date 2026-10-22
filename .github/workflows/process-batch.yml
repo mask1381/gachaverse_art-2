@@ -35,13 +35,13 @@ jobs:
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION_STRING: ${{ secrets.TG_SESSION_STRING }}
           BATCH_CHAT_ID: ${{ secrets.BATCH_CHAT_ID }}
-		  STORAGE_CHAT_ID: ${{ secrets.STORAGE_CHAT_ID }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          STORAGE_CHAT_ID: ${{ secrets.STORAGE_CHAT_ID }}
           PIXIV_REFRESH_TOKEN: ${{ secrets.PIXIV_REFRESH_TOKEN }}
           TELEGRAPH_TOKEN: ${{ secrets.TELEGRAPH_TOKEN }}
           PIXIV_PROXY_HOST: ${{ secrets.PIXIV_PROXY_HOST }}
-          INPUT_BATCH_ID: ${{ inputs.batch_id }}
-          INPUT_MESSAGE_ID: ${{ inputs.message_id }}
+          INPUT_BATCH_ID: ${{ github.event.inputs.batch_id }}
+          INPUT_MESSAGE_ID: ${{ github.event.inputs.message_id }}
         run: |
           python scripts/process_batch.py \
             --batch-id "$INPUT_BATCH_ID" \
