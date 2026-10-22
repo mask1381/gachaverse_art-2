@@ -1,0 +1,65 @@
+{
+  "timezone": "Asia/Tehran",
+  "lead_minutes": 15,
+  "window_hours": 24,
+  "max_scheduled": 95,
+  "pool_pages": 3,
+  "slot_tolerance_minutes": 5,
+  "item_gap_seconds": 120,
+  "fallback_types": {
+    "zip": [
+      "album"
+    ],
+    "telegraph": [
+      "album"
+    ],
+    "album": []
+  },
+  "now_weights": {
+    "album": 3,
+    "telegraph": 2,
+    "zip": 1
+  },
+  "slots": [
+    {
+      "time": "00:00",
+      "type": "zip"
+    },
+    {
+      "time": "01:00",
+      "type": "album"
+    },
+    {
+      "time": "05:00",
+      "type": "album"
+    },
+    {
+      "time": "08:00",
+      "type": "zip"
+    },
+    {
+      "time": "09:00",
+      "type": "album"
+    },
+    {
+      "time": "11:00",
+      "type": "telegraph"
+    },
+    {
+      "time": "13:00",
+      "type": "album"
+    },
+    {
+      "time": "17:00",
+      "type": "album"
+    },
+    {
+      "time": "19:00",
+      "type": "telegraph"
+    },
+    {
+      "time": "21:00",
+      "type": "album"
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+name: Process gachaverse batch
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_id:
+        description: 'batch id (from the bot)'
+        required: true
+        type: string
+      message_id:
+        description: 'message id of the batch file in the private group'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gachaverse-batch
+  cancel-in-progress: false
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Process batch
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TG_SESSION_STRING: ${{ secrets.TG_SESSION_STRING }}
+          BATCH_CHAT_ID: ${{ secrets.BATCH_CHAT_ID }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          PIXIV_REFRESH_TOKEN: ${{ secrets.PIXIV_REFRESH_TOKEN }}
+          TELEGRAPH_TOKEN: ${{ secrets.TELEGRAPH_TOKEN }}
+          PIXIV_PROXY_HOST: ${{ secrets.PIXIV_PROXY_HOST }}
+          INPUT_BATCH_ID: ${{ inputs.batch_id }}
+          INPUT_MESSAGE_ID: ${{ inputs.message_id }}
+        run: |
+          python scripts/process_batch.py \
+            --batch-id "$INPUT_BATCH_ID" \
+            --message-id "$INPUT_MESSAGE_ID"
