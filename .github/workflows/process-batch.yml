@@ -35,6 +35,7 @@ jobs:
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION_STRING: ${{ secrets.TG_SESSION_STRING }}
           BATCH_CHAT_ID: ${{ secrets.BATCH_CHAT_ID }}
+	    STORAGE_CHAT_ID: ${{ secrets.STORAGE_CHAT_ID }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           PIXIV_REFRESH_TOKEN: ${{ secrets.PIXIV_REFRESH_TOKEN }}
           TELEGRAPH_TOKEN: ${{ secrets.TELEGRAPH_TOKEN }}
