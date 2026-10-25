@@ -43,18 +43,18 @@ from lab.telegram import (
     split_balanced,
 )
 from lab.title import clean_title
+from lab.bulk_storage import bulk_upload
 from lab.userbot_zip import (
     delete_storage_messages,
     prepare_zip,
-    send_albums_to_storage,
     send_zip_to_storage,
     storage_configured,
     userbot_configured,
     zip_name_base,
 )
 
-log = logging.getLogger("waifu_lab")
 
+log = logging.getLogger("gachaverse_lab")
 
 ENRICH_KEYS = (
     "character",
@@ -277,7 +277,7 @@ def prepare_post(
 
 
 def _prepare_gallery(client, enriched: list[dict], cover_item: dict, rules: dict) -> tuple[list[str], bytes, list[int]]:
-    """Upload every page to the storage channel as balanced albums and collect the bot links.
+    """Upload every page with /bulk_start.../bulk_end and return ONE bot link (per the waifu model).
 
     Pages go in the artist's original order (story order); the cover only decides the channel photo.
     Returns (links, cover photo bytes, storage message ids for rollback).
@@ -306,8 +306,10 @@ def _prepare_gallery(client, enriched: list[dict], cover_item: dict, rules: dict
     if get_rule(rules, "image_edit", "enabled", default=False):
         cover_blob = fit_telegram(edit_image(cover_blob, rules))
 
-    links, storage_ids = send_albums_to_storage(blobs)
-    return links, cover_blob, storage_ids
+    # one /bulk_start.../bulk_end upload -> one single link in the caption (waifu model).
+    # bulk_upload rolls back its own storage messages on failure, so no ids are tracked here.
+    link = bulk_upload([[("page.jpg", b) for b in blobs]])
+    return [link], cover_blob, []
 
 
 def _deliver(method: str, client, cfg, chosen, enriched, make_caption, rules, zip_name: str | None = None) -> str:
@@ -424,6 +426,128 @@ def run_post(client, cfg, token, chosen, dict_rows, content_map, adult_set, drop
         raise
 
 
+def _state_from_cfg(cfg) -> tuple[dict, dict]:
+    """(posted, runtime) from the in-memory State when present, else the files on disk."""
+    if cfg.get("state"):
+        return cfg["state"].posted(), cfg["state"].runtime()
+    return load_posted(cfg["posted_path"]), load_runtime(cfg["runtime_path"])
+
+
+def _data_from_cfg(cfg) -> tuple[list, dict, set, set]:
+    return (
+        load_dictionary_rows(cfg["dictionary_path"]),
+        load_content_map(cfg["content_tags_path"]),
+        load_adult_set(cfg["adult_tags_path"]),
+        load_drop_set(cfg["drop_tags_path"]),
+    )
+
+
+def run_round(cfg: dict, illust_id: str | None = None, overrides: dict | None = None) -> int:
+    """Immediate delivery of one round: mode 'now' (pick the artist) or mode 'manual' (explicit illust_id).
+
+    This replaces the missing pipeline.run_round(cfg) that process_batch.py called for mode 'now'
+    (waifu-lab calls it run_manual). One post is prepared and delivered; state is saved on every
+    step, exactly like run_post. Returns 0 (rc) for the workflow.
+    """
+    dry = cfg["dry_run"]
+    if str(illust_id or "").strip().isdigit():
+        return _run_manual(cfg, str(illust_id).strip(), overrides or {}, dry)
+
+    posted, runtime = _state_from_cfg(cfg)
+    artist = select_artist(cfg["artists"], runtime)
+    rules = resolve_rules(artist)
+    log.info("Selected artist %s (%s); posted=%s", artist.get("name"), artist["user_id"], len(posted))
+
+    with httpx.Client(follow_redirects=True, timeout=20.0) as client:
+        token = refresh_access_token(client, cfg["pixiv_refresh_token"])
+        illusts = fetch_user_illusts(client, token, artist["user_id"], set(posted))
+        candidates = [adapt_list_item(i) for i in illusts if i]
+        fresh = [c for c in candidates if c.get("id") and c["id"] not in posted]
+        if get_rule(rules, "nsfw_as_sfw", default=False):
+            for c in fresh:
+                c["is_nsfw"] = False
+        log.info("Illusts=%s fresh=%s", len(candidates), len(fresh))
+        if not fresh:
+            log.info("Nothing new to post")
+            _save_state(cfg, None, runtime)
+            return 0
+
+        dict_rows, content_map, adult_set, drop_set = _data_from_cfg(cfg)
+        nsfw_pick = pick_highest(fresh, nsfw_only=True)
+        sfw_pick = pick_highest(fresh, nsfw_only=False)
+        errors: list[Exception] = []
+
+        def persist() -> None:
+            _save_state(cfg, posted, runtime)
+
+        for pick, nsfw in ((nsfw_pick, True), (sfw_pick, False)):
+            if not pick:
+                continue
+            try:
+                run_post(client, cfg, token, pick, dict_rows, content_map, adult_set, drop_set, posted, runtime, rules, nsfw)
+            except Exception as exc:
+                log.exception("%s path failed", "NSFW" if nsfw else "SFW")
+                errors.append(exc)
+            finally:
+                persist()
+        if errors:
+            raise errors[0]
+        log.info("Done. posted=%s", len(posted))
+        return 0
+
+
+def _run_manual(cfg: dict, illust_id: str, overrides: dict, dry: bool) -> int:
+    """Explicit single-post delivery (mode 'manual'). Mirrors waifu-lab's run_manual."""
+    posted, runtime = _state_from_cfg(cfg)
+    dict_rows, content_map, adult_set, drop_set = _data_from_cfg(cfg)
+
+    with httpx.Client(follow_redirects=True, timeout=20.0) as client:
+        token = refresh_access_token(client, cfg["pixiv_refresh_token"])
+        detail = fetch_illust_detail(client, token, illust_id)
+        uid = str((detail.get("user") or {}).get("id") or "")
+        base = next((a for a in cfg["artists"] if str(a["user_id"]) == uid),
+                    {"user_id": uid, "name": (detail.get("user") or {}).get("name", ""), "rules": {}})
+        artist = {**base, "rules": _merge_rules(base.get("rules") or {}, overrides)}
+        rules = resolve_rules(artist)
+
+        item = adapt_list_item(detail)
+        nsfw = bool(item.get("is_nsfw"))
+        if get_rule(rules, "nsfw_as_sfw", default=False):
+            nsfw = False
+            item["is_nsfw"] = False
+        # merged single-page posts are not needed for a single manual pick
+        drop_last = bool(get_rule(rules, "pages", "drop_last", default=False))
+        n = int(item.get("page_count") or 1)
+        if drop_last and n > 1:
+            n -= 1
+        item["_method"], item["_pages"] = decide_delivery(item, n, nsfw, rules), n
+        try:
+            run_post(client, cfg, token, item, dict_rows, content_map, adult_set, drop_set, posted, runtime, rules, nsfw)
+        except Exception:
+            if not dry:
+                _record_failure(posted, runtime, item["id"])
+                _save_state(cfg, posted, runtime)
+            raise
+        _save_state(cfg, posted, runtime)
+        log.info("Manual %s done. posted=%s", illust_id, len(posted))
+        return 0
+
+
+def _merge_rules(base: dict, overrides: dict) -> dict:
+    """Merge manual-send overrides into the artist's rules (shallow, key-wise)."""
+    if not overrides:
+        return base
+    out = dict(base)
+    for k, v in overrides.items():
+        if v is None:
+            out.pop(k, None)
+        elif isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = {**out[k], **v}
+        else:
+            out[k] = v
+    return out
+
+
 def _persist_stats(cfg, classified, nsfw: bool) -> None:
     """Count every Pixiv tag of a posted item into State sink or csv."""
     if cfg["dry_run"]:
@@ -453,16 +577,9 @@ def run(dry_run: bool | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = env_config(dry_run)
 
-    # WAIFU_MODE: plan = schedule the next 24h in the channel (nightly), post = send one round right now.
-    # The workflow sets it; running the module by hand without it behaves like "post".
-    mode = (os.getenv("WAIFU_MODE") or "post").strip().lower()
-    log.info("Mode=%r dry_run=%s", mode, cfg["dry_run"])
-    if mode == "plan":
-        from lab.plan import run_plan  # imported here: plan.py imports this module
-
-        return run_plan(cfg, cfg["dry_run"])
-    if mode != "post":
-        log.warning("Unknown WAIFU_MODE %r, using post", mode)
+    # Running the module by hand = one immediate round ("post" in waifu-lab terms).
+    # Batch mode (plan / now / manual) is decided in scripts/process_batch.py, never by env.
+    log.info("dry_run=%s", cfg["dry_run"])
 
     runtime = load_runtime(cfg["runtime_path"])
     posted = load_posted(cfg["posted_path"])

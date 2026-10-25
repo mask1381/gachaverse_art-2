@@ -47,7 +47,7 @@ from lab.userbot_zip import (
     userbot_configured,
 )
 
-log = logging.getLogger("waifu_lab.plan")
+log = logging.getLogger("gachaverse_lab.plan")
 
 MAX_TRIES = 6
 RECENT_KEEP = 40

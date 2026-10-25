@@ -4,6 +4,7 @@ import logging
 import tempfile
 from pathlib import Path
 
+from lab.bulk_storage import bulk_upload
 from lab.config import _settings
 from lab.images import download_image, edit_image, fit_telegram
 from lab.rules import deep_merge, get_rule, select_page
@@ -13,7 +14,6 @@ from lab.userbot_zip import (
     delete_storage_messages,
     download_original,
     prepare_zip,
-    send_albums_to_storage,
     send_zip_to_storage,
 )
 
@@ -54,7 +54,7 @@ def deliver_via_bot(
     """
     chat_id = b["storage_chat_id"]
     bot_username = b["bot_username"]
-    storage_ids: list[int] = []
+    storage_ids: list[int] = []  # bulk_upload rolls back its own messages; kept for the legacy except path
 
     if method == "zip":
         with tempfile.TemporaryDirectory() as tmp:
@@ -77,11 +77,10 @@ def deliver_via_bot(
                 log.warning("Skipping page %s: %s", it.get("id"), exc)
         if not items:
             raise RuntimeError("bot album: no images downloaded")
-        links, storage_ids = send_albums_to_storage(
-            items, chat_id=chat_id, bot_username=bot_username, chunk_size=int(b.get("chunk_size") or 10)
-        )
-        links_out = links
-        caption = make_caption("telegraph", links)
+        # one /bulk_start.../bulk_end -> one link; bulk_upload rolls back its own storage messages
+        link = bulk_upload([[items]], force_document=False)
+        links_out = [link]
+        caption = make_caption("telegraph", [link])
 
     log.info("Bot links (%s): %s", method, links_out)
     cover = select_page(enriched, cover_spec)

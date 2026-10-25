@@ -136,8 +136,15 @@ def run(batch: dict, sink: AckSink) -> int:
     state = State(batch.get("posted"), batch.get("runtime"), sink, dry=cfg["dry_run"])
     cfg["state"] = state
     try:
-        if batch.get("mode") == "now":
+        mode = str(batch.get("mode") or "plan").strip().lower()
+        if mode == "now":
+            # immediate round: pick & deliver one round right now
             return pipeline.run_round(cfg)
+        if mode == "manual":
+            # explicit single post: requires batch.illust_id (the panel's manual send)
+            if batch.get("when"):
+                logging.getLogger(__name__).warning("manual with when=... is not supported yet; posting now")
+            return pipeline.run_round(cfg, illust_id=batch.get("illust_id"), overrides=batch.get("overrides"))
         return run_plan(cfg, cfg["dry_run"])
     finally:
         state.flush()

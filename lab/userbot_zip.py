@@ -19,7 +19,7 @@ from lab.telegram import ALBUM_MAX, split_balanced
 
 log = logging.getLogger(__name__)
 
-FALLBACK_ZIP_NAME = "WaifuLab"
+FALLBACK_ZIP_NAME = "GachaVerseArt"
 MAX_NAME_LEN = 60
 MAX_ZIP_BYTES = int(1.9 * 1024**3)  # Telethon limit is 2 GB for normal accounts
 DOWNLOAD_TIMEOUT = 90.0
@@ -85,7 +85,7 @@ def _camel(text) -> str:
 def zip_name_base(info: dict | None, art_title: str | None = None) -> str:
     """Name that matches the content: characters (max 2) + franchise.
 
-    No character -> the artist's Latin title first. Nothing at all -> first theme, then 'WaifuLab'.
+    No character -> the artist's Latin title first. Nothing at all -> first theme, then 'GachaVerseArt'.
     """
     info = info or {}
     chars = [c for c in (_camel(x) for x in (info.get("characters") or [])[:2]) if c]
