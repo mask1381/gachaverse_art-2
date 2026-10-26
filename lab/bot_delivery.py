@@ -8,8 +8,7 @@ from lab.bulk_storage import bulk_upload
 from lab.config import _settings
 from lab.images import download_image, edit_image, fit_telegram
 from lab.rules import deep_merge, get_rule, select_page
-from lab.telegram import send_photo
-from lab.userbot_schedule import schedule_album
+from lab.userbot_schedule import schedule_album, send_photo_now
 from lab.userbot_zip import (
     delete_storage_messages,
     download_original,
@@ -91,10 +90,7 @@ def deliver_via_bot(
         blob = fit_telegram(blob)
         spoiler = bool(get_rule(rules, "spoiler", default=False))
         if when is None:
-            send_photo(
-                client, cfg["telegram_bot_token"], cfg["telegram_chat_id"], caption,
-                photo_bytes=blob, has_spoiler=spoiler,
-            )
+            send_photo_now(cfg["telegram_chat_id"], blob, caption, spoiler=spoiler)
         else:
             schedule_album(cfg["telegram_chat_id"], [blob], caption, when)
     except Exception:

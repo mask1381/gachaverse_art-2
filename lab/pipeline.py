@@ -36,14 +36,11 @@ from lab.tags import (
     record_tag_stats,
 )
 from lab.telegram import (
-    message_id_of,
-    send_item_albums,
-    send_item_photo,
-    send_photo,
     split_balanced,
 )
 from lab.title import clean_title
 from lab.bulk_storage import bulk_upload
+from lab.userbot_schedule import send_album_now, send_photo_now
 from lab.userbot_zip import (
     delete_storage_messages,
     prepare_zip,
@@ -318,7 +315,6 @@ def _deliver(method: str, client, cfg, chosen, enriched, make_caption, rules, zi
     make_caption(method, page_url=None) builds the caption for exactly this method.
     zip_name: content-based prefix for the zip and the files inside it.
     """
-    bot_token = cfg["telegram_bot_token"]
     chat_id = cfg["telegram_chat_id"]
     cover_item = select_page(enriched, get_rule(rules, "cover", "page"))
 
@@ -339,16 +335,24 @@ def _deliver(method: str, client, cfg, chosen, enriched, make_caption, rules, zi
         links, cover_blob, storage_ids = _prepare_gallery(client, enriched, gallery_cover, rules)
         try:
             caption = make_caption("telegraph", links)
-            payload = send_photo(client, bot_token, chat_id, caption, photo_bytes=cover_blob, has_spoiler=spoiler)
+            send_photo_now(chat_id, cover_blob, caption, spoiler=spoiler)
         except Exception:
             delete_storage_messages(storage_ids)
             raise
-        return f"gallery:{message_id_of(payload)}"
+        return "gallery"
 
     if method == "album":
         caption = make_caption("album")
         ordered = [cover_item] + [it for it in enriched if it is not cover_item]
-        send_item_albums(client, bot_token, chat_id, ordered, caption)
+        blobs = []
+        for it in ordered:
+            try:
+                blobs.append(fit_telegram(download_image(client, it)))
+            except Exception as exc:
+                log.warning("Skipping album page %s: %s", it.get("id"), exc)
+        if not blobs:
+            raise RuntimeError("No album images could be downloaded")
+        send_album_now(chat_id, blobs, caption)
         return "album"
 
     if method == "zip":
@@ -363,18 +367,21 @@ def _deliver(method: str, client, cfg, chosen, enriched, make_caption, rules, zi
             link = send_zip_to_storage(zip_path) if zip_path else None
             caption = make_caption("zip", link)
 
-            # 2) cover photo with the bot link in the caption
-            if get_rule(rules, "image_edit", "enabled", default=False):
+            # 2) cover photo with the bot link in the caption, sent as the userbot
+            try:
                 blob = download_image(client, cover_item)
-                blob = edit_image(blob, rules)
-                photo_payload = send_photo(
-                    client, bot_token, chat_id, caption, photo_bytes=blob, has_spoiler=spoiler
-                )
+                if get_rule(rules, "image_edit", "enabled", default=False):
+                    blob = edit_image(blob, rules)
+                blob = fit_telegram(blob)
+            except Exception as exc:
+                log.warning("Could not download zip cover %s: %s", cover_item.get("id"), exc)
+                blob = None
+            if blob is None:
+                photo_id = 0
+                log.info("Zip cover skipped by rules / download failure; zip only")
             else:
-                photo_payload = send_item_photo(
-                    client, bot_token, chat_id, cover_item, caption, has_spoiler=spoiler
-                )
-            photo_id = message_id_of(photo_payload)
+                ids = send_photo_now(chat_id, blob, caption, spoiler=spoiler)
+                photo_id = ids[0] if ids else 0
             if zip_path is None:
                 log.info("Zip skipped by rules; photo only")
         return f"{'zip' if zip_path else 'photo'}:{photo_id}"

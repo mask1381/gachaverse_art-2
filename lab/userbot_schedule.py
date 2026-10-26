@@ -142,6 +142,65 @@ def schedule_album(chat_id, blobs, caption, when, gap=CHUNK_GAP) -> list[int]:
     return _retry(lambda: _album(chat_id, blobs, caption, when, gap=gap), "Scheduling album")
 
 
+# ---- immediate (non-scheduled) channel sends ----
+# The target channel has no bot of its own, so every post reaches it through the
+# userbot (TG_SESSION_STRING), never through a bot token.
+
+async def _send_now(client, entity, bio, caption: str, spoiler: bool = False) -> int:
+    res = await client.send_file(entity, bio, caption=caption, parse_mode="html", spoiler=bool(spoiler))
+    ids = _ids(res)
+    if not ids:
+        raise RuntimeError("No message id returned for channel photo")
+    return ids[0]
+
+
+def _immediate(chat_id, blobs, caption, spoiler: bool = False):
+    async def _run():
+        async with _session(chat_id) as (client, entity):
+            if len(blobs) == 1:
+                bio = io.BytesIO(blobs[0])
+                bio.name = "cover.jpg"
+                return [_send_now(client, entity, bio, caption, spoiler=spoiler)]
+            ids: list[int] = []
+            try:
+                for i, idxs in enumerate(split_balanced(list(range(len(blobs))))):
+                    if i:
+                        time.sleep(CHUNK_GAP)
+                    files = []
+                    for k in idxs:
+                        bio = io.BytesIO(blobs[k])
+                        bio.name = f"page_{k + 1}.jpg"
+                        files.append(bio)
+                    if len(files) == 1:
+                        res = await client.send_file(entity, files[0], caption=caption, parse_mode="html",
+                                                     spoiler=bool(spoiler))
+                    else:
+                        caps = [caption] + [""] * (len(files) - 1)
+                        res = await client.send_file(entity, files, caption=caps, parse_mode="html",
+                                                     spoiler=bool(spoiler))
+                    ids.extend(_ids(res))
+                if not ids:
+                    raise RuntimeError("Album send returned no messages")
+            except Exception:
+                try:
+                    await client.delete_messages(entity, list(ids))
+                except Exception as exc:
+                    log.error("ORPHAN sent messages %s could not be deleted: %s", ids, exc)
+                raise
+            return ids
+    return asyncio.run(_run())
+
+
+def send_photo_now(chat_id, blob: bytes, caption: str, spoiler: bool = False) -> list[int]:
+    """Immediately post one cover photo to the target channel as the userbot."""
+    return _retry(lambda: _immediate(chat_id, [blob], caption, spoiler=spoiler), "Sending cover photo")
+
+
+def send_album_now(chat_id, blobs: list[bytes], caption: str, spoiler: bool = False) -> list[int]:
+    """Immediately post an album to the target channel as the userbot."""
+    return _retry(lambda: _immediate(chat_id, blobs, caption, spoiler=spoiler), "Sending album")
+
+
 # ---- plain text, no photo and no link preview ----
 
 async def _plain_text(chat_id: str, caption: str, when: datetime) -> list[int]:
