@@ -62,7 +62,9 @@ def env_config(batch: dict | None = None) -> dict:
         chat = str(batch.get("target_chat_id") or "").strip()
         dry_run = bool(batch.get("dry"))
         artists = list(batch.get("artists") or [])
+        channel_law = batch.get("channel_law") or {}
     else:
+        channel_law = {}
         settings = _settings()
         chat = _env("TG_CHAT_ID", "TELEGRAM_CHAT_ID") or str(settings.get("defaultChatId") or "").strip()
         dry_run = os.getenv("DRY_RUN", "").lower() in {"1", "true", "yes"}
@@ -89,6 +91,7 @@ def env_config(batch: dict | None = None) -> dict:
         "telegram_chat_id": chat,
         "telegraph_token": telegraph,
         "dry_run": dry_run,
+        "channel_law": channel_law,   # لایحه‌ی کانال از بات
         "artists": artists,
         "dictionary_path": DATA_DIR / "character_dictionary.csv",
         "posted_path": DATA_DIR / "sent_ids.json",

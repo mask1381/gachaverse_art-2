@@ -19,11 +19,9 @@ DEFAULT_RULES: dict[str, Any] = {
     "delivery": {
         "mode": "auto",  # auto | zip | album | telegraph  (forced for every post)
         "allowed": ["telegraph", "zip", "album"],  # methods the auto logic may pick
-        # SFW with this many pages or more -> telegraph (bot gallery). Applies to every artist, also mode=album.
-        # An artist with an explicit album_max keeps albums up to that size, the gallery starts above it.
-        # null = off for this artist (needs "telegraph" in allowed).
-        "sfw_telegraph_min_pages": 10,
-        "nsfw_zip_min_pages": 5,  # NSFW: pages >= this -> zip, fewer -> telegraph
+        # NOTE: sfw_telegraph_min_pages / nsfw_zip_min_pages are NOT in the defaults on purpose:
+        # the channel law (لایحه) drives them (law.split.full_to_channel / law.zip.nsfw_after).
+        # An artist that sets them explicitly still overrides the channel law.
         # "telegraph" now means GALLERY: albums in the storage channel + bot links, cover photo in the channel
         "telegraph": {
             "min_pages_over_album": 11,  # only when zip is not allowed: >= this -> telegraph, else album
@@ -33,6 +31,13 @@ DEFAULT_RULES: dict[str, Any] = {
         },
         # what to try when a method fails (zip only for NSFW and only when zip is allowed)
         "fallback": {"telegraph": ["zip", "album"], "zip": [], "album": []},
+    },
+    "law": {   # لایحه‌ی کانال (از بات) — قالبِ مشترک با waifu و bot؛ استثنای هنرمند همین keys را override می‌کند
+        "split": {"full_to_channel": 10, "share_div": 3, "min_channel": 2, "max_channel": 6},
+        "zip": {"sfw_after": 0, "nsfw_after": 5},
+        "nsfw": {"channel_mode": "cover_only", "single_in_channel": 1, "cover": "sfw_or_text", "spoiler": True},
+        "single": {"sfw_hd": True, "nsfw_hd": True},
+        "merge": {"min": 4, "max": 10, "max_wait_days": 3},
     },
 }
 
@@ -48,9 +53,18 @@ def deep_merge(base: dict, override: dict) -> dict:
     return out
 
 
-def resolve_rules(artist: dict) -> dict:
-    """Effective rules = DEFAULT_RULES deep-merged with artist['rules']."""
-    return deep_merge(DEFAULT_RULES, artist.get("rules") or {})
+def resolve_rules(artist: dict, channel_law: dict | None = None) -> dict:
+    """Effective rules = DEFAULT_RULES deep-merged with artist['rules'].
+    channel_law (لایحه‌ی کانال از بات) به‌عنوان پایه‌ی rules.law می‌نشیند و
+    استثنای هنرمند (rules.law) روی آن اعمال می‌شود.
+
+    DEFAULT_RULES is never mutated: each call starts from a fresh copy so successive
+    artists / batches cannot leak a previous channel_law into the next one.
+    """
+    base = deep_merge(DEFAULT_RULES, {})
+    if channel_law:
+        base["law"] = deep_merge(base["law"], copy.deepcopy(channel_law))
+    return deep_merge(base, artist.get("rules") or {})
 
 
 def get_rule(rules: dict, *path: str, default: Any = None) -> Any:

@@ -455,7 +455,7 @@ def run_round(cfg: dict, illust_id: str | None = None, overrides: dict | None = 
 
     posted, runtime = _state_from_cfg(cfg)
     artist = select_artist(cfg["artists"], runtime)
-    rules = resolve_rules(artist)
+    rules = resolve_rules(artist, cfg.get("channel_law"))
     log.info("Selected artist %s (%s); posted=%s", artist.get("name"), artist["user_id"], len(posted))
 
     with httpx.Client(follow_redirects=True, timeout=20.0) as client:
@@ -508,7 +508,7 @@ def _run_manual(cfg: dict, illust_id: str, overrides: dict, dry: bool) -> int:
         base = next((a for a in cfg["artists"] if str(a["user_id"]) == uid),
                     {"user_id": uid, "name": (detail.get("user") or {}).get("name", ""), "rules": {}})
         artist = {**base, "rules": _merge_rules(base.get("rules") or {}, overrides)}
-        rules = resolve_rules(artist)
+        rules = resolve_rules(artist, cfg.get("channel_law"))
 
         item = adapt_list_item(detail)
         nsfw = bool(item.get("is_nsfw"))
@@ -584,7 +584,7 @@ def run(dry_run: bool | None = None) -> int:
     runtime = load_runtime(cfg["runtime_path"])
     posted = load_posted(cfg["posted_path"])
     artist = select_artist(cfg["artists"], runtime)
-    rules = resolve_rules(artist)
+    rules = resolve_rules(artist, cfg.get("channel_law"))
     log.info("Selected artist %s (%s); posted=%s", artist.get("name"), artist["user_id"], len(posted))
 
     with httpx.Client(follow_redirects=True, timeout=20.0) as client:

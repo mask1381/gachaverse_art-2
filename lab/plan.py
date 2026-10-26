@@ -184,12 +184,12 @@ def merge_singles(items: list[dict], conf: dict) -> list[dict]:
     return keep
 
 
-def build_pools(client: httpx.Client, token: str, artists: list[dict], posted_ids: set[str], pages: int) -> dict[str, dict]:
+def build_pools(client: httpx.Client, token: str, artists: list[dict], posted_ids: set[str], pages: int, channel_law: dict | None = None) -> dict[str, dict]:
     """Fresh candidates of every artist, each tagged with the delivery method its artist rules give it."""
     pools: dict[str, dict] = {}
     for artist in artists:
         uid = str(artist["user_id"])
-        rules = resolve_rules(artist)
+        rules = resolve_rules(artist, channel_law)
         try:
             illusts = fetch_user_illusts(client, token, uid, posted_ids, max_pages=pages, early_break=False)
         except Exception as exc:
@@ -554,7 +554,7 @@ def run_plan(cfg: dict, dry: bool) -> int:
 
     with httpx.Client(follow_redirects=True, timeout=20.0) as client:
         token = refresh_access_token(client, cfg["pixiv_refresh_token"])
-        pools = build_pools(client, token, cfg["artists"], set(posted), int(conf["pool_pages"]))
+        pools = build_pools(client, token, cfg["artists"], set(posted), int(conf["pool_pages"]), cfg.get("channel_law"))
         planner = Planner(
             cfg, conf, client, token, pools, posted, runtime, dict_rows, content_map, adult_set, drop_set, dry, len(existing)
         )
