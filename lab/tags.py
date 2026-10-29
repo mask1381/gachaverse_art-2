@@ -14,7 +14,13 @@ from lab.config import DATA_DIR
 
 log = logging.getLogger(__name__)
 
-BRAND_TAG = "#GachaVerse"
+_BRAND_TAG = ""
+
+def set_brand_tag(tag: str) -> None:
+    global _BRAND_TAG
+    _BRAND_TAG = f"#{tag.strip().lstrip('#')}" if (tag and tag.strip()) else ""
+
+BRAND_TAG = _BRAND_TAG
 FORMAT_TAGS = {"zip": "#ZIP", "telegraph": "#Gallery"}  # replaces the old #18Plus: the post format is the label
 JP_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
 PAREN_RE = re.compile(r"^(?P<head>[^()]+?)\s*\((?P<inside>[^()]+)\)\s*$")
@@ -392,7 +398,7 @@ def classify_tags(
         franchise_name, franchise_ht = o.get("game_name") or franchise_name, o["game_hashtag"]
 
     # assemble
-    taken = {x.lower() for x in [BRAND_TAG, franchise_ht or ""]}
+    taken = {x.lower() for x in ([_BRAND_TAG] if _BRAND_TAG else []) + [franchise_ht or ""]}
     char_hts: list[str] = []
     char_names: list[str] = []
     for ch in characters:
@@ -437,6 +443,8 @@ def classify_tags(
         hashtags.append(franchise_ht)
     hashtags += char_hts
     hashtags += category
+    if _BRAND_TAG:
+        hashtags.append(_BRAND_TAG)
 
     final = {h.lower() for h in hashtags}
     decisions = []

@@ -59,6 +59,8 @@ def env_config(batch: dict | None = None) -> dict:
     telegraph = _env("TELEGRAPH_TOKEN")
 
     if batch is not None and isinstance(batch, dict):
+        from lab.tags import set_brand_tag
+        set_brand_tag(str(batch.get("brand_tag") or "").strip())
         chat = str(batch.get("target_chat_id") or "").strip()
         dry_run = bool(batch.get("dry"))
         artists = list(batch.get("artists") or [])
