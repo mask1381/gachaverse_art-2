@@ -56,15 +56,24 @@ def deep_merge(base: dict, override: dict) -> dict:
 def resolve_rules(artist: dict, channel_law: dict | None = None) -> dict:
     """Effective rules = DEFAULT_RULES deep-merged with artist['rules'].
     channel_law (لایحه‌ی کانال از بات) به‌عنوان پایه‌ی rules.law می‌نشیند و
-    استثنای هنرمند (rules.law) روی آن اعمال می‌شود.
+    استثنای هنرمند (۱.۱: rules.law_exception، پیش‌تر legacy: rules.law) روی آن اعمال می‌شود —
+    پس در خروجی، `rules["law"]` همیشه قانونِ نهاییِ این هنرمند است (برای delivery/plan).
 
     DEFAULT_RULES is never mutated: each call starts from a fresh copy so successive
     artists / batches cannot leak a previous channel_law into the next one.
     """
+    artist_rules = artist.get("rules") or {}
+    exc = copy.deepcopy(artist_rules.get("law_exception", artist_rules.get("law")) or {})
     base = deep_merge(DEFAULT_RULES, {})
     if channel_law:
         base["law"] = deep_merge(base["law"], copy.deepcopy(channel_law))
-    return deep_merge(base, artist.get("rules") or {})
+    rules = deep_merge(base, artist_rules)
+    # کلیدِ استثنا را به‌صورت خام در rules نگه نمی‌داریم؛ فقط قانونِ نهایی در rules["law"]
+    if "law_exception" in rules:
+        del rules["law_exception"]
+    if exc:
+        rules["law"] = deep_merge(rules["law"], exc)
+    return rules
 
 
 def get_rule(rules: dict, *path: str, default: Any = None) -> Any:
